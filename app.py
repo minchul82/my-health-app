@@ -1,22 +1,52 @@
 import streamlit as st
 import pandas as pd
-from openai import OpenAI
+import os
+from datetime import datetime
 
-# OpenAI API 클라이언트 설정 (반드시 Secrets에 OPENAI_API_KEY 저장 필수)
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# 라이브러리 체크를 위한 시도
+try:
+    from openai import OpenAI
+    openai_available = True
+except ImportError:
+    openai_available = False
 
-# AI 분석 버튼 및 로직
+st.title("My Health Focus")
+
+# 데이터 파일 이름
+DATA_FILE = "health_data.csv"
+
+# 입력 폼
+with st.form("health_form"):
+    vitamin = st.checkbox("비타민 C 먹음")
+    food = st.text_input("오늘 먹은 음식")
+    submit = st.form_submit_button("기록 저장하기")
+
+if submit:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_data = pd.DataFrame({"날짜": [now], "영양제": [vitamin], "식단": [food]})
+    
+    if os.path.exists(DATA_FILE):
+        df = pd.read_csv(DATA_FILE)
+        df = pd.concat([df, new_data], ignore_index=True)
+    else:
+        df = new_data
+    df.to_csv(DATA_FILE, index=False)
+    st.success("기록 완료!")
+
+# AI 기능
 if st.button("AI 건강 분석 요청하기"):
-    if os.path.exists("health_data.csv"):
-        data = pd.read_csv("health_data.csv").tail(5) # 최근 5개 데이터 분석
-        
-        # AI 프롬프트 구성 (사용자의 기록을 분석하도록 요청)
-        prompt = f"다음은 나의 최근 식단과 영양제 기록이야: {data.to_string()} 이 내용을 바탕으로 건강 관리에 대한 조언을 해줘."
+    if not openai_available:
+        st.error("openai 라이브러리가 설치되지 않았습니다. requirements.txt를 확인하세요.")
+    elif "OPENAI_API_KEY" not in st.secrets:
+        st.error("Streamlit Secrets에 OPENAI_API_KEY가 설정되지 않았습니다.")
+    elif os.path.exists(DATA_FILE):
+        client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        data = pd.read_csv(DATA_FILE).tail(3)
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": f"다음 기록을 분석해줘: {data.to_string()}"}]
         )
-        st.write(response.choices[0].message.content)
+        st.info(response.choices[0].message.content)
     else:
         st.warning("분석할 데이터가 없습니다.")
